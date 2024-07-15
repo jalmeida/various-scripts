@@ -1,0 +1,1204 @@
+########################################################################################################################
+#
+# Take a capture of session at Firewall end
+#
+########################################################################################################################
+
+Firewall1# cd /var/log
+Firewall1# fw tab -t connections -f -u &gt; /var/log/fwsessions`date +%Y-%m-%d-%H-%M-%S`.txt
+
+Move file to a linux server (as could be Hop server)
+###################################################################################
+Firewall1# scp /var/log/fwsessions* youruser@linuxserverip:~
+
+Analize the session log with imagination
+###################################################################################
+## TOP Dest IP-dPORT
+cat fwsessionsxx-xx-xx-xx-xx.txt | cut -d ';' -f3-7 | sed -e 's/;/ /g' | sed -e 's/:/ /g' | cut -d ' ' -f 12,16 | grep -v '^$' |  sort | uniq -c | sort -g -r | column -t |more
+
+## TOP Source IP-dPORT
+cat fwsessionsxx-xx-xx-xx-xx.txt | cut -d ';' -f3-7 | sed -e 's/;/ /g' | sed -e 's/:/ /g' | cut -d ' ' -f 4,16 | grep -v '^$' |  sort | uniq -c | sort -g -r | column -t |more
+
+## TOP sIP -dIP
+cat fwsessionsxx-xx-xx-xx-xx.txt | cut -d ';' -f3-7 | sed -e 's/;/ /g' | sed -e 's/:/ /g' | cut -d ' ' -f 4,12 | grep -v '^$' |  sort | uniq -c | sort -g -r | column -t |more
+
+## TOP sIP -dIP dPORT
+cat fwsessionsxx-xx-xx-xx-xx.txt | cut -d ';' -f3-7 | sed -e 's/;/ /g' | sed -e 's/:/ /g' | cut -d ' ' -f 4,12,16 | grep -v '^$' |  sort | uniq -c | sort -g -r | column -t |more
+
+
+########################################################################################################################
+#
+# Cisco IOS TACACS
+#
+########################################################################################################################
+
+
+aaa new-model
+!
+!
+aaa group server tacacs+ OWN-TACACS
+server 1.1.1.1
+server 1.1.1.2
+!
+aaa authentication login default group OWN-TACACS local
+aaa authentication login VTYAUTHENT group OWN-TACACS local
+aaa authentication login CONAUTHENT group OWN-TACACS local
+aaa authentication enable default group OWN-TACACS enable
+aaa authorization console
+aaa authorization exec VTYAUTHOR group OWN-TACACS local
+aaa authorization exec CONAUTHOR group OWN-TACACS local
+aaa authorization commands 15 default group OWN-TACACS local
+aaa accounting exec default stop-only group OWN-TACACS
+aaa accounting commands 15 default stop-only group OWN-TACACS
+!
+!
+!
+!
+!
+!
+aaa session-id common
+
+!
+!
+tacacs-server host 1.1.1.1 timeout 2 key 7 XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+tacacs-server host 1.1.1.2 timeout 2 key 7 XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+tacacs-server directed-request
+
+
+
+
+
+line con 0
+exec-timeout 60 0
+authorization exec CONAUTHOR
+logging synchronous
+login authentication CONAUTHENT
+stopbits 1
+line aux 0
+stopbits 1
+line vty 0 4
+exec-timeout 30 0
+authorization exec VTYAUTHOR
+logging synchronous
+login authentication VTYAUTHENT
+transport preferred ssh
+transport input ssh
+transport output none
+line vty 5 15
+exec-timeout 30 0
+logging synchronous
+transport preferred ssh
+transport input ssh
+transport output none
+!
+
+## To force Interface
+
+ip tacacs source-interface vlan 3
+
+
+########################################################################################################################
+#
+# Cisco IOS TACACS
+#
+########################################################################################################################
+
+feature tacacs+
+
+tacacs-server host 1.1.1.1 key 7 "XXXXXXXXXXXXXXXX" timeout 2
+tacacs-server host 1.1.1.2 key 7 "XXXXXXXXXXXXXXXX" timeout 2
+aaa group server tacacs+ OWN-TACACS
+server 1.1.1.1
+server 1.1.1.2
+use-vrf management
+source-interface mgmt0
+
+
+aaa authentication login default group OWN-TACACS local
+aaa authorization commands default group OWN-TACACS local
+aaa accounting default group OWN-TACACS local
+tacacs-server directed-request
+
+########################################################################################################################
+#
+# Rancid - Mass config
+#
+########################################################################################################################
+
+Option 1
+$ clogin -c 'conf t; snmp-server host 1.1.1.1 public; end; wr mem'</pre>
+Option 2
+$ clogin -x /tmp/commands route1 router2 router3</pre>
+Option 3
+#!/usr/local/bin/bash
+#
+# The purpose of this script is to automate configuration changes to a
+# large number of devices.  The script identifies the device list, as well
+# as the change script, and then pushes the changes one by one.
+#
+
+CLOGINPATH="/usr/home/rancid/bin/clogin"
+CREDENTIALS="/usr/home/rancid/.cloginrc"
+DEVICELISTPATH="/usr/home/rancid/device-lists/"
+CHANGESCRIPTPATH="/usr/home/rancid/change-scripts/"
+CHANGELOG="/usr/home/rancid/logs/changelog-`date +%m-%d-%Y`.log"
+
+clear
+echo "=====[ Rancid Config Push Script ]====="
+echo ""
+echo "Please enter the proposed device list:"
+echo "`ls $DEVICELISTPATH`"
+echo "--------------------------------------"
+echo -n "&gt; "
+read DEVICELIST
+
+if [ -f $DEVICELISTPATH$DEVICELIST ]
+ then
+  echo ""
+  echo "Device List = \"./device-lists/$DEVICELIST\" (confirmed)"
+ else
+  echo ""
+  echo "Device list = \"./device-lists/$DEVICELIST\" (does not exist!)"
+  echo "Aborting..."
+  echo ""
+   exit
+fi
+
+echo ""
+echo "Please enter name of change script:"
+echo "`ls $CHANGESCRIPTPATH | grep -v ".sh" | grep -v "device-lists"`"
+echo "-----------------------------------"
+echo -n "&gt; "
+read CHANGESCRIPT
+
+if [ -f $CHANGESCRIPTPATH$CHANGESCRIPT ]
+ then
+  echo ""
+  echo "Change Script = \"./change-scripts/$CHANGESCRIPT\" (confirmed)"
+  echo ""
+ else
+  echo "Device list = \"./change-scripts/$CHANGESCRIPT\" (does not exist!)"
+  echo "Aborting..."
+  echo ""
+   exit
+fi
+
+echo "-- Proposed Changes --"
+echo "`cat $CHANGESCRIPTPATH$CHANGESCRIPT`"
+echo "-- Proposed Changes --"
+echo ""
+echo "Are you sure you want to proceed?  If so, type \"yes\":"
+echo -n "&gt; "
+read AREYOUSURE
+
+if [ $AREYOUSURE != "yes" ]
+ then
+  echo ""
+  echo "Aborting..."
+  echo ""
+   exit
+ else
+  echo ""
+  echo "Implementing Changes..."
+  echo ""
+fi
+
+#for i in `cat $DEVICELISTPATH$DEVICELIST`
+# do echo "===[ $i ]==="
+# $CLOGINPATH -f $CREDENTIALS -x $CHANGESCRIPTPATH$CHANGESCRIPT $i
+#done
+
+for DEVICE in `cat $DEVICELISTPATH$DEVICELIST`
+ do
+  echo "===[ $DEVICE ]==="
+  echo "" &gt;&gt; $CHANGELOG
+  echo "===[ $DEVICE ]===" &gt;&gt; $CHANGELOG
+  echo "" &gt;&gt; $CHANGELOG
+  OUTPUT=`$CLOGINPATH -f $CREDENTIALS -x $CHANGESCRIPTPATH$CHANGESCRIPT $DEVICE`
+  echo "$OUTPUT" &gt;&gt; $CHANGELOG
+done
+
+########################################################################################################################
+#
+# Cisco Nexus License
+#
+########################################################################################################################
+
+<![CDATA[<!--Notes ACF
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">-->
+<div>
+<div>To know if licence file was installed before</div>
+<div></div>
+<div>* show run</div>
+<div>* show logging log</div>
+<div>* show logging nvram</div>
+<div>* show accounting log</div>
+<div>* show license usage</div>
+<div>* show license host</div>
+<div>* dir bootflash:</div>
+</div>]]>
+
+
+########################################################################################################################
+#
+# AnsibleFest 2016 London - Managing Your Cisco Data Center Network with Ansible
+#
+########################################################################################################################
+
+<![CDATA[<a href="https://www.ansible.com/blog/ansiblefest-london-2016-presentations" target="_blank">https://www.ansible.com/blog/ansiblefest-london-2016-presentations</a>
+
+<a href="https://www.ansible.com/ansible-cisco-data-center" target="_blank">https://www.ansible.com/ansible-cisco-data-center</a>
+
+&nbsp;
+
+Test some playbooks : <a href="https://github.com/ansible/test-nxos.git" target="_blank">https://github.com/ansible/test-nxos.git</a>
+
+References:
+
+Ansible
+
+<a href="https://www.ansible.com/networks" target="_blank">https://www.ansible.com/networks</a>
+
+<a href="http://docs.ansible.com/ansible/list_of_network_modules.html" target="_blank">http://docs.ansible.com/ansible/list_of_network_modules.html</a>
+
+GitHub
+
+<a href="https://github.com/datacenter" target="_blank">https://github.com/datacenter</a>
+
+<a href="https://github.com/datacenter/opennxos" target="_blank">https://github.com/datacenter/opennxos</a>
+
+<a href="https://github.com/datacenter/nxos-ansible" target="_blank">https://github.com/datacenter/nxos-ansible</a>
+
+Cisco
+
+<a href="http://www.cisco.com/go/ansible/" target="_blank">http://www.cisco.com/go/ansible/</a>
+
+<a href="http://developer.cisco.com" target="_blank">http://developer.cisco.com</a>
+<div class="row-fluid-wrapper row-depth-1 row-number-1 ">
+<div class="row-fluid ">
+<div class="span12 widget-span widget-type-cell video-player-wrapper" data-widget-type="cell" data-x="0" data-w="12">
+<div class="row-fluid-wrapper row-depth-1 row-number-2 ">
+<div class="row-fluid ">
+<div class="span6 widget-span widget-type-cell " data-widget-type="cell" data-x="3" data-w="6">
+<div class="row-fluid-wrapper row-depth-2 row-number-2 ">
+<div class="row-fluid ">
+<div class="span12 widget-span widget-type-rich_text webinar-description videoplayer-title" data-widget-type="rich_text" data-x="0" data-w="12">
+<div class="cell-wrapper layout-widget-wrapper">
+<h1>MANAGING YOUR CISCO DATA CENTER NETWORK WITH ANSIBLE</h1>
+</div>
+</div>
+</div>
+</div>
+<div class="row-fluid-wrapper row-depth-2 row-number-3 ">
+<div class="row-fluid ">
+<div class="span12 widget-span widget-type-custom_widget " data-widget-type="custom_widget" data-x="0" data-w="12">
+<div class="cell-wrapper layout-widget-wrapper">
+<div>
+<div><iframe class="wistia_embed" src="https://fast.wistia.net/embed/iframe/kg5yw0xr5s" name="wistia_embed" width="760" height="472" frameborder="0" scrolling="no" allowfullscreen="allowfullscreen"></iframe></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="row-fluid-wrapper row-depth-2 row-number-4 "></div>
+<div class="row-fluid-wrapper row-depth-2 row-number-5 ">
+<div class="row-fluid ">
+<div class="span12 widget-span widget-type-raw_html videos-breadcrumb-menu" data-widget-type="raw_html" data-x="0" data-w="12">
+<div class="cell-wrapper layout-widget-wrapper">
+<div id="videos-breadcrumb"><a href="https://www.ansible.com/videos">VIDEOS</a>  /  <a href="https://www.ansible.com/videos-ansiblefest-london-2016">ANSIBLEFEST LONDON 2016</a>  /  CISCO</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="span3 widget-span widget-type-space " data-widget-type="space" data-x="9" data-w="3"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="row-fluid-wrapper row-depth-0 row-number-1 ">
+<div class="row-fluid ">
+<div class="span12 widget-span widget-type-cell " data-widget-type="cell" data-x="0" data-w="12">
+<div class="row-fluid-wrapper row-depth-1 row-number-1 ">
+<div class="row-fluid ">
+<div class="span3 widget-span widget-type-space " data-widget-type="space" data-x="0" data-w="3"></div>
+<div class="span6 widget-span widget-type-rich_text webinar-description" data-widget-type="rich_text" data-x="3" data-w="6">
+<div class="cell-wrapper layout-widget-wrapper">
+<div>As IT organizations adopt the cloud strategy to build agile data centers, they realize the need to move fast and drive higher levels of innovation. One of the key components is automation for reliable provisioning and management of the datacenter network. In this session Fabrizio discuses how Ansible can be leveraged to manage your Cisco datacenter network.</div>
+<div></div>
+<div></div>
+<div><strong>Learn:</strong></div>
+<ul>
+	<li>New features introduced in Ansible 2.0</li>
+	<li>How to start playing with Ansible on your Cisco Nexus devices</li>
+	<li>Joint RedHat/Ansible/Cisco initiatives</li>
+</ul>
+<div></div>
+<table class="fest-session" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td colspan="3"><strong>Presenter:</strong></td>
+</tr>
+<tr>
+<td><img class="team-img-sm" title="Fabrizio Maccioni" src="https://www.ansible.com/hs-fs/hubfs/2015_Images/Community/community-fabrizio-maccioni.png?t=1457099531904&amp;width=70&amp;height=70" alt="Fabrizio Maccioni" width="70" height="70" /></td>
+<td></td>
+<td><strong>Fabrizio Maccioni</strong>, Technical Marketing Engineer, Cisco
+
+<a href="https://twitter.com/fabrimaccioni" target="_blank" data-mce-target="_blank"><img src="https://www.ansible.com/hubfs/-2015-template-assets/images/team/team-twitter.png?t=1457099531904" alt="twitter" /></a> <a href="https://www.linkedin.com/in/fabrizio-maccioni-18b0b81" target="_blank" data-mce-target="_blank"><img src="https://www.ansible.com/hubfs/-2015-template-assets/images/team/team-linkedin.png?t=1457099531904" alt="linkedin" /></a></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>]]
+
+
+########################################################################################################################
+#
+# Cisco Application Centric Infrastructure (ACI)
+#
+########################################################################################################################
+
+Education and Training</h1>
+Fundamentals of Application Centric Infrastructure (ACI)
+
+https://www.youtube.com/watch?v=l75B6D9xyMQ&noredirect=1
+
+<a href="https://www.google.es/url?sa=t&amp;rct=j&amp;q=&amp;esrc=s&amp;source=web&amp;cd=1&amp;cad=rja&amp;uact=8&amp;ved=0ahUKEwivvt7UkrnLAhVGdXIKHVzzBNEQFgggMAA&amp;url=http%3A%2F%2Fwww.cisco.com%2Fen%2FUS%2Fprod%2Fcollateral%2Fnetmgtsw%2Fps13004%2Fps13460%2Fwhite-paper-c11-729906_ns1261_Networking_Solutions_White_Paper.html&amp;usg=AFQjCNHhPOvDOo-aR5ryOWYhu67EGCBgMA&amp;sig2=H9G07BsfAdbhgZyHhJRJ2A" target="_blank">Principles of Application Centric Infrastucture</a>
+
+<a href="http://rednectar.net/2015/09/21/cisco-aci-tutorial-a-configuration-guide/" target="_blank">Cisco ACI Tutorial 1 - A Configuration Guide</a>
+
+<a href="http://rednectar.net/2015/09/21/cisco-aci-tutorial-2-goodbye-to-vlans-well-not-quite/sig2=usrV9eiiJjBDXUt8HgUq5Q" target="_blank">Cisco ACI Tutorial 2 - Goodbye to VLANs</a>
+
+<a href="http://rednectar.net/2015/10/03/cisco-aci-tutorial-3-sing-a-new-song-for-sorting-server-groups-and-policy/" target="_blank">Cisco ACI Tutorial 3 - Sing a new song for sorting server groups and policy</a>
+
+<a href="http://rednectar.net/2015/12/28/cisco-aci-tutorial-4-all-about-access-policies-the-new-interface-range-command/" target="_blank">Cisco ACI Tutorial 4 - All about Access Policies - the new "interface range" command</a>
+
+<a href="http://www.cisco.com/c/en/us/td/docs/switches/datacenter/aci/apic/sw/1-x/getting-started/b_APIC_Getting_Started_Guide/getting_started_with_apic_using_the_gui.html" target="_blank">Cisco Application Policy Infrastructure Controller (APIC) GUI - Getting Started</a>
+
+&nbsp;
+<h1>Test Drive ACI</h1>
+<a href="http://rednectar.net/2015/06/12/cisco-have-a-new-aci-lab-on-dcould-heres-how-to-access-it/" target="_blank">Cisco ACI lab on dCloud - Here's how to access it</a>
+
+&nbsp;
+<h1>Other Related Information</h1>
+<a href="http://www.cisco.com/c/dam/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-735428.pdf" target="_blank">Demystifying Cisco ACI Migration</a>
+
+<a href="http://www.cisco.com/c/en/us/products/collateral/switches/nexus-9000-series-switches/white-paper-c11-731686.html" target="_blank">Migrating Your Data Center to an Application Centric Infrastructure</a>]]>
+
+
+########################################################################################################################
+#
+# CSM Authentication with ACS and Authorization with Local RBAC Configuration Example
+#
+########################################################################################################################
+
+<![CDATA[<div class="docHeaderComponent">
+<div class="linksRow">
+<div class="infobarClearFix">
+<div class="infobar">
+<div class="documentId">http://www.cisco.com/c/en/us/td/docs/security/security_management/cisco_security_manager/security_manager/410/installation/guide/IG/aduser.html</div>
+<div class="documentId">http://www.cisco.com/c/en/us/td/docs/security/security_management/cisco_security_manager/security_manager/410/installation/guide/IG/aduser.html</div>
+<div class="documentId"></div>
+<div class="documentId">Document ID<a class="makeNotALink">116209</a></div>
+<div class="updatedDate">Updated:Aug 13, 2013</div>
+</div>
+</div>
+<div class="toolbar">
+<div class="noprint downloadDocument">
+<div class="toolbarIcon downloadIcon"></div>
+<button class="view-download-list-link anchor" type="button">Download Document</button>
+
+</div>
+<div class="noprint printDocument js-only">
+<div class="toolbarIcon printIcon"></div>
+<button class="anchor printPage" type="button">Print</button>
+
+</div>
+</div>
+</div>
+<div class="noprint panelRow"></div>
+</div>
+<div id="eot-doc-wrapper">
+<div id="tg-body">
+<div id="support-toc">
+<h2>Contents</h2>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc0">Introduction</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc1">Prerequisites</a></div>
+<div class="toc-h3"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc2">Requirements</a></div>
+<div class="toc-h3"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc3">Components Used</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc4">Background Information</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc5">Configure</a></div>
+<div class="toc-h3"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc6">Configure ACS Server</a></div>
+<div class="toc-h3"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc7">Configure CSM CiscoWorks Common Services</a></div>
+<div class="toc-h3"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc8">Configure Default Authorization Roles for Undefined Users (Optional)</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc9">Verify</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc10">Troubleshoot</a></div>
+<div class="toc-h2"><a href="http://www.cisco.com/c/en/us/support/docs/security/security-manager/116209-configure-csm-00.html#anc11">Related Information</a></div>
+</div>
+<a class="auto_toc_anchor" name="anc0"></a>
+<h2>Introduction</h2>
+This document describes the steps required in order to authenticate Cisco Security Manager (CSM) Versions 4.3/4.4 with Access Control Server (ACS) Version 5.x. In this configuration, user authentication is managed by ACS while authorization is managed on CSM with the local Role Based Access Control (RBAC) feature.
+
+<a class="auto_toc_anchor" name="anc1"></a>
+<h2>Prerequisites</h2>
+<a class="auto_toc_anchor" name="anc2"></a>
+<h3>Requirements</h3>
+Cisco recommends that you have knowledge of these topics:
+<ul>
+	<li>Basic Knowledge of Authentication, Authorization, and Accounting (AAA)</li>
+	<li>CSM Server and Device Administration</li>
+	<li>Authentication and Authorization Policies Configuration on ACS Version 5.x</li>
+</ul>
+<a class="auto_toc_anchor" name="anc3"></a>
+<h3>Components Used</h3>
+The information in this document is based on these software and hardware versions:
+<ul>
+	<li>CSM Version 4.4</li>
+	<li>ACS Version 5.4</li>
+</ul>
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+
+<a class="auto_toc_anchor" name="anc4"></a>
+<h2>Background Information</h2>
+In previous versions of CSM, external authentication and authorization services were possible with ACS Version 4.x only. The use of ACS Version 5.x was not officially tested or supported. The ACS Version 4.x integration was often difficult to scale becuase it required manual synchronization of the ACS and CSM network device configurations. In order to overcome this administrative burden, local RBAC capabilities are integrated directly into CSM Version 4.3 and later. In production deployments where both CSM Versions 4.3/4.4 and ACS Version 5.x are deployed, it is now possible to integrate the two in order to service user authentication externally and maintain granular authorization policies locally on CSM.
+
+<a class="auto_toc_anchor" name="anc5"></a>
+<h2>Configure</h2>
+<a class="auto_toc_anchor" name="anc6"></a>
+<h3>Configure ACS Server</h3>
+Complete these steps in order to configure the ACS server:
+<ol>
+	<li>From the ACS Version 5.x administrative GUI, navigate to <strong>Network Resources &gt; Network Devices and AAA Clients &gt; Create</strong>, and add the CSM server as a Network Access Device (NAD). Although TACACS+ is more commonly used for network device authentication, both ACS and CSM can be configured in order to use RADIUS if required.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-01.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-01.png" alt="" /></a></li>
+	<li>Navigate to <strong>Users and Identity Stores &gt; Internal Identity Stores &gt; Users</strong>, and create a new local user for CSM access. Associate the user account with an Identity Group as required, such as <strong>CSM_Admins</strong>. Alternatively, an external identity store, such as Active Directory, can be used.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-02.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-02.png" alt="" /></a></li>
+	<li>Navigate to <strong>Access Policies &gt; Access Services &gt; Default Device Admin &gt; Identity</strong>, and associate the <strong>Identity Source</strong> to be used for user authentication. In this example, the<strong> Internal Users</strong> identity source is chosen because the CSM user accounts are locally defined on ACS. An external identity source can be selected when you integrate it with Active Directory.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-03.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-03.png" alt="" /></a></li>
+	<li>Navigate to <strong>Access Policies &gt; Access Services &gt; Default Device Admin &gt; Authorization</strong>, and configure an authorization policy that permits access to the user Identity Group defined previously (<strong>CSM_Admins</strong>). This is required for ACS order-of-operations processing even though the actual authorization policy is defined/enforced locally on the CSM server.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-04.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-04.png" alt="" /></a></li>
+</ol>
+<a class="auto_toc_anchor" name="anc7"></a>
+<h3>Configure CSM CiscoWorks Common Services</h3>
+Complete these steps in order to configure CSM CiscoWorks Common Services:
+<ol>
+	<li>Double-click the <strong>Cisco Security Manager</strong> icon on the CSM server desktop. Alternatively, navigate to <strong>Tools &gt; Security Manager Administration &gt; Server Security</strong> with the CSM Configuration Manager client in order to cross launch the Server Security Tools within the CSM Common Services backend.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-05.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-05.png" alt="" /></a></li>
+	<li>Enter the CSM administrative user credentials, and click <strong>Login</strong>. Choose the <strong>Server Administration</strong> option from the Cisco Security Management Suite launch page.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-06.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-06.png" alt="" /></a></li>
+	<li>Navigate to <strong>Server &gt; Security &gt; AAA Mode Setup</strong>, and choose <strong>Local RBAC</strong> and either <strong>TACACS+</strong> or <strong>RADIUS</strong>. Click <strong>Change</strong> in order to edit the login server settings.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-07.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-07.png" alt="" /></a></li>
+	<li>Enter the login server IP or Fully Qualified Domain Name (FQDN), ports, and pre-shared key. Under normal operations, do not change the <strong>Login fallback options</strong> settings in order to allow fallback access to CSM in the event that the ACS server is unreachable. By default, the local CSM <strong>administrative</strong> user account is defined for fallback access. If change is necessary, care should be taken in order to prevent accidental lockout of the CSM server.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-08.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-08.png" alt="" /></a></li>
+	<li>Navigate to <strong>Server &gt; Single-Server Management &gt; Local User Setup</strong>, and click <strong>Add </strong>in order to create local user accounts that match the internal or external user accounts defined in ACS. The usernames are case-sensitive and should match ACS exactly. These locally-defined accounts are then mapped to the CSM local RBAC authorization roles. Specific roles such as System Administrator can be chosen for <strong>Task Authorization</strong>separation or the user can be provided either full or restricted access to a subset of devices. Refer to the<strong><a href="http://www.cisco.com/en/US/customer/docs/security/security_management/cisco_security_manager/security_manager/4.4/installation/guide/aduser.html#wp1063290" target="_self" rel="nofollow">CiscoWorks Common Services Default Roles</a></strong> section of the CSM 4.4 Installation Guide for more details about Task Authorization and Roles.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-09.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-09.png" alt="" /></a>
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-10.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-10.png" alt="" /></a></li>
+</ol>
+<a class="auto_toc_anchor" name="anc8"></a>
+<h3>Configure Default Authorization Roles for Undefined Users (Optional)</h3>
+Complete these steps in order to configure default authorization roles for undefined users:
+<ol>
+<ol>
+	<li>In some CSM deployments, it is not convenient to maintain a one-for-one user mapping between CSM and ACS. An alternative approach is to assign a default set of authorization roles in CSM for users not present in the local CSM database.</li>
+</ol>
+</ol>
+<ol>
+	<li>In order to configure the default authorization roles, double-click the <strong>Cisco Security Manager</strong> icon on the CSM server desktop and select the <strong>Server Administration</strong> option from the launch page.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-11.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-11.png" alt="" /></a></li>
+	<li>Navigate to <strong>Server &gt; Single-Server Management &gt; Role Management Setup</strong>. By default, the Help Desk role is assigned the Default Role designation. In order to change this designation, check one or more roles, and click the<strong>Set as default</strong> button.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-12.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-12.png" alt="" /></a></li>
+	<li>In order to enable this feature, navigate to <strong>Tools &gt; Security Manager Administration &gt; Server Security</strong> with the Configuration Mananger client, and check the check box labeled <strong>Allow logon for user ids not available in Local User Database</strong>. Click <strong>Save</strong> in order to save the configuration.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-13.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-13.png" alt="" /></a></li>
+</ol>
+<a class="auto_toc_anchor" name="anc9"></a>
+<h2>Verify</h2>
+Use this section in order to confirm that your configuration works properly.
+<ul>
+	<li>Review the TACACS+ or RADIUS authentication logs on the ACS server in order to identify whether the CSM user is able to authenticate against the configured identity store.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-14.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-14.png" alt="" /></a></li>
+	<li>Verify that the CSM user is able to perform an available task within the <strong>Task Authorization</strong> role defined. For example, log in as a user with the <strong>System Administrator</strong> role and try to add a new device to the CSM inventory.</li>
+</ul>
+<a class="auto_toc_anchor" name="anc10"></a>
+<h2>Troubleshoot</h2>
+This section provides information you can use in order to troubleshoot your configuration.
+<ol>
+<ol>
+	<li>Errors such these indicate that you attempted to perform a task that you are not authorized to perform as per the local RBAC policy.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-15.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-15.png" alt="" /></a>
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-16.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-16.png" alt="" /></a></li>
+	<li>Log in to the CSM Server Administration interface as an administrative user and navigate to <strong>Server &gt; Single-Server Management &gt; Local User Setup. </strong>Edit the user account in question and review the <strong>Task Authorization</strong>policy defined for the user. When you use the CSM-defined roles, ensure that you review the <strong><a href="http://www.cisco.com/en/US/customer/docs/security/security_management/cisco_security_manager/security_manager/4.4/installation/guide/aduser.html#wp1063290" target="_self" rel="nofollow">CiscoWorks Common Services Default Roles</a></strong> section of the CSM 4.4 Installation Guide in order to better understand the permissions for each role. For example, the <strong>System Administrator</strong> role provides complete access to all CSM client functions while <strong>Super Admin</strong> only provides access to the backend CiscoWorks operations.</li>
+</ol>
+</ol>
+<ol>
+	<li>If desired, new roles can be defined and default roles edited in order to provide more granular authorization policy control. In order to add/edit, log in to the CSM server manager inteface and navigate to <strong>Server &gt; Single-Server Management &gt; Role Management Setup</strong>.
+<a class="show-image-alone" title="Related image, diagram or screenshot." href="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-17.png"><img src="https://www.almeidas.es/wp-content/uploads/2016/03/116209-configure-csm-17.png" alt="" /></a></li>
+</ol>
+<a class="auto_toc_anchor" name="anc11"></a>
+<h2>Related Information</h2>
+<ul>
+	<li><strong><a href="http://www.cisco.com/en/US/customer/docs/security/security_management/cisco_security_manager/security_manager/4.4/installation/guide/aduser.html#wp1063290" target="_self" rel="nofollow">CiscoWorks Common Services Default Roles - CSM 4.4 Installation Guide</a> </strong></li>
+	<li><strong><a href="http://www.cisco.com/cisco/web/support/index.html?referring_site=bodynav" rel="nofollow">Technical Support &amp; Documentation - Cisco Systems</a></strong></li>
+</ul>
+http://www.cisco.com/c/en/us/td/docs/security/security_management/cisco_security_manager/security_manager/410/installation/guide/IG/aduser.html
+
+</div>
+</div>]]>
+
+
+########################################################################################################################
+#
+#  Enable Multicast inside VLAN
+#
+########################################################################################################################
+
+-- AVLSWH001 VDC 1
+vlan configuration 1000
+ ip igmp snooping querier 10.1.1.2
+
+interface Vlan1000
+ ip igmp join-group 239.255.225.23
+ ip igmp join-group 239.255.225.24
+
+-- AVLSWH002 VDC 1
+vlan configuration 1000
+ ip igmp snooping querier 10.1.1.3
+
+interface Vlan1000
+ ip igmp join-group 239.255.225.23
+ ip igmp join-group 239.255.225.24
+
+########################################################################################################################
+#
+# PFX 2 CER+Key  CER+Key 2 PFX
+#
+########################################################################################################################
+
+-- you can convert pfx to Apache compatible format with next commands:
+openssl pkcs12 -in domain.pfx -clcerts -nokeys -out domain.cer
+openssl pkcs12 -in domain.pfx -nocerts -nodes  -out domain.key   
+
+To create pfx from key+cert
+openssl pkcs12 -export -out domain.pfx -inkey domain.key -in domain.cer
+
+########################################################################################################################
+#
+# Ansible : Example of ssh connection to N7K using nxos_command
+#
+########################################################################################################################
+
+$ cat show.yaml
+---
+- hosts: AVLRDO001
+ gather_facts: no
+ connection: local
+
+tasks:
+ - name: return show commands output
+ nxos_command:
+ commands:
+ - show version
+ - show running-config
+ host: "{{ inventory_hostname }}"
+ username: ansible
+ password: ansible
+ register: output
+
+- debug: var=output
+
+$ ansible-playbook show.yaml -vvvvvv 
+ Using /etc/ansible/ansible.cfg as config file
+ Loaded callback default of type stdout, v2.0<
+
+PLAYBOOK: show.yaml ************************************************************
+ 1 plays in show.yaml
+
+
+########################################################################################################################
+#
+# Ansible URLs
+#
+########################################################################################################################
+
+https://projectme10.wordpress.com/tag/ansible/
+https://pynet.twb-tech.com/blog/ansible/ansible-cfg-template.html
+https://pynet.twb-tech.com/blog/ansible/ansible-cfg-template-p2.html
+https://pynet.twb-tech.com/blog/ansible/ansible-cfg-template-p3.html
+
+########################################################################################################################
+#
+# SSH Proxy : Used with Rancid
+#
+########################################################################################################################
+
+Create a config file under ~/.ssh/config
+host destinationserver1.almeidas.es
+ proxycommand ssh manolito@hopserver.almeidas.es "/bin/bash -c 'exec 3&lt;&gt;/dev/tcp/%h/22; cat &lt;&amp;3 &amp; cat &gt;&amp;3;kill $!'"
+host destinationserver2.almeidas.es
+ proxycommand ssh manolito@hopserver.almeidas.es "/bin/bash -c 'exec 3&lt;&gt;/dev/tcp/%h/22; cat &lt;&amp;3 &amp; cat &gt;&amp;3;kill $!'"
+host destinationserver3.almeidas.es
+ proxycommand ssh manolito@hopserver.almeidas.es "/bin/bash -c 'exec 3&lt;&gt;/dev/tcp/%h/22; cat &lt;&amp;3 &amp; cat &gt;&amp;3;kill $!'"
+Add SSH key from Source server to hop server to access without password on hop server (this way connection to hop server will be transparent)
+cd ~/.ssh/
+ssh-keygen -t rsa
+Copy id_rsa.pub text (from source server) into ~/.ssh/authorized_keys (to hopserver)
+
+########################################################################################################################
+#
+# Copy-paste configuration at F5 LTM with tmsh
+#
+########################################################################################################################
+
+0- Pre-activities: take a backup (bigip.conf)
+# cp /config/bigip.conf ~
+
+1- Write to enable edit mode:
+
+#tmsh
+#load sys config from-terminal merge
+
+2- Paste all configuration
+3- Press Control-D to save config
+
+4- We are done.
+
+#####################
+Rollback:
+Do same step with old pool config
+
+1- Write to enable edit mode:
+
+#load sys config from terminal merge
+
+2- Paste all configuration
+
+3- Press Control-D to save config
+
+4- We are done.
+
+########################################################################################################################
+#
+# Gigamon HC2 upgrade
+#
+########################################################################################################################
+
+[4.1 --&gt; 4.4 --&gt; 4.6
+
+NOT IN CLUSTER MODE
+<pre>GIGAMON001 # image fetch scp://user:password@10.1.1.10/app/gigamon/4.6/hc2_460101.img
+GIGAMON001 # image install hc2_460101.img install-boot
+GIGAMON001 # image boot next
+GIGAMON001 # reload</pre>
+&nbsp;
+<pre>GIGAMON002 # image fetch scp://user:password@10.1.1.10/app/gigamon/4.6/hc2_460101.img
+GIGAMON002 # image install hc2_460101.img install-boot
+GIGAMON002 # image boot next
+GIGAMON002 # reload</pre>
+IN CLUSTER MODE
+<pre>GIGAMON001 # image fetch scp://user:password@10.1.1.10/app/gigamon/4.6/hc2_460101.img
+GIGAMON001 # image install hc2_460101.img install-boot
+GIGAMON001 # image boot next
+GIGAMON001 # reload</pre>
+<pre>GIGAMON002 # image fetch scp://user:password@10.1.1.10/app/gigamon/4.6/hc2_460101.img
+GIGAMON002 # image install hc2_460101.img install-boot
+GIGAMON002 # image boot next
+
+</pre>
+<pre>GIGAMON001 # cluster reload</pre>]]
+
+########################################################################################################################
+#
+# Nexus 7000 NXOS Upgrade via ISSU
+#
+########################################################################################################################
+
+planned to upgrade the NX-OS from 6.2(2a) to 6.2(16)
+
+Here is the ISSU path 6.2(2a) —&gt; 6.2(8a) —&gt; 6.2(16).
+
+The Nexus 7000 has two images in order to run.  The first is a Kickstart image and the second is the actual System image. The  Kickstart image contains the Linux kernel, basic drivers,   and initial file system. The System Image contains the system  software and infrastructure code.
+
+I prefer to use FTP to transfer large files; you can also copy  them via TFTP or USB if you wish.
+<ol>
+ 	<li>Start your local FTP server (or place files on common FTP  server). In my case the IP of the FTP server is 10.1.3.11</li>
+ 	<li>On the Nexus 7000, execute the following command to copy the kickstart image using the management VRF in this example:
+<pre>N7K1# <strong>copy ftp://nexus@10.1.3.11/n7000-s1-kickstart.5.0.3.bin bootflash://sup-local/</strong>
+ Enter vrf (If no input, current vrf ‘default’ is considered): <strong>management</strong>
+ Password: <strong>nexus</strong>
+ [##                       ]         4.15MB</pre>
+<strong>
+</strong>This is the progress indicator bar that shows you transfer status
+<pre><em>***** Transfer of file Completed Successfully *****</em></pre>
+</li>
+ 	<li>Now you can copy the NXOS code to the bootflash:
+<pre>N7K1# <strong>copy</strong><strong>ftp://nexus@10.1.3.11/n7000-s1-dk9.5.0.3.bin bootflash://sup-local/</strong>
+ Enter vrf (If no input, current vrf ‘default’ is considered): <strong>management</strong>
+ Password: <strong>nexus</strong>
+ [##                       ]         4.15MB
+ ***** Transfer of file Completed Successfully *****</pre>
+</li>
+ 	<li>Now that you have the files on the Active supervisor, copy them to the standby supervisor:
+<pre> N7K1# <strong>copy bootflash:/n7000-s1-dk9.5.0.3.bin bootflash://sup-2/</strong></pre>
+<pre>Copy progress 100% 107430KB !This is the progress indicator bar that shows you transfer status</pre>
+</li>
+ 	<li>
+<pre>N7K1# <strong>copy bootflash:/n7000-s1-kickstart.5.0.3.bin bootflash://sup-2/ </strong>Copy progress 100% 24522KB</pre>
+</li>
+ 	<li>To validate that you have successfully copied to the standby supervisor, you should also attach to it and check the directory.
+<pre>N7K1# <strong>attach module 6</strong>
+ Attaching to module 6 …
+ To exit type ‘exit’, to abort type ‘$.’
+ Cisco Nexus Operating System (NX-OS) Software
+ TAC support: http://www.cisco.com/tac
+ Copyright (c) 2002-2010, Cisco Systems, Inc. All rights reserved.
+ The copyrights to certain works contained in this software are
+ owned by other third parties and used and distributed under
+ license. Certain components of this software are licensed under
+ the GNU General Public License (GPL) version 2.0 or the GNU
+ Lesser General Public License (LGPL) Version 2.1. A copy of each
+ such license is available at (SNIP)
+ N7K1(standby)# <strong>dir</strong>
+ 3610    Jul 14 20:37:16 2010  aaa_cnv.log
+ 16384    Jan 13 12:40:30 2008  lost+found/
+ 100118021    Jan 14 11:11:23 2008  n7000-s1-dk9.4.2.4.bin
+ 107369112    Jul 14 19:58:04 2010  n7000-s1-dk9.5.0.2a.bin
+ <strong>107430217    Aug 10 14:14:19 2010  n7000-s1-dk9.5.0.3.bin </strong><strong>
+ </strong>24727552    Jan 14 11:11:37 2008  n7000-s1-kickstart.4.2.4.bin
+ 23613440    Jul 14 19:56:49 2010  n7000-s1-kickstart.5.0.2a.bin
+ <strong>24522752    Aug 10 14:21:11 2010  n7000-s1-kickstart.5.0.3.bin</strong>
+ 4096    Jan 13 14:29:21 2008  vdc_2/
+ 4096    Jan 13 14:29:21 2008  vdc_3/
+ 4096    Jan 13 14:29:21 2008  vdc_4/</pre>
+</li>
+</ol>
+<pre>Usage for bootflash://
+ 513769472 bytes used
+ 1296130048 bytes free
+ 1809899520 bytes total
+ N7K1(standby)#</pre>
+<ol start="6">
+ 	<li>Now you can return to the active supervisor by typing exit
+<pre>N7K1(standby)# <strong>exit</strong>
+ rlogin: connection closed.
+ N7K1#</pre>
+</li>
+ 	<li>Before continuing, make sure that all your configs are saved and backed up to an external device.  I suggest copying them to a TFTP server for disaster recovery.  A rollback will automatically be created when you perform the upgrade, but an added insurance policy is suggested.
+<pre>N7K1# <strong>checkpoint file bootflash:081010_MainVDC.cfg
+ </strong>Done
+ N7K1# <strong>switchto vdc coreSwitch1
+ </strong>Cisco Nexus Operating System (NX-OS) Software
+ TAC support: http://www.cisco.com/tac
+ Copyright (c) 2002-2010, Cisco Systems, Inc. All rights reserved.
+ The copyrights to certain works contained in this software are
+ owned by other third parties and used and distributed under
+ license. Certain components of this software are licensed under
+ the GNU General Public License (GPL) version 2.0 or the GNU
+ Lesser General Public License (LGPL) Version 2.1. A copy of each
+ such license is available at
+ (SNIP)
+ N7K1-CoreSwitch1# <strong>checkpoint file bootflash:081010_VDC1.cfg</strong>
+ Done
+ N7K1-CoreSwitch1# <strong>switchback</strong>
+ N7K1#</pre>
+</li>
+ 	<li>Prior to the upgrade of the code, I highly recommend checking the impact of the upgrade.  This is a good command to run
+when you are preparing your Chance Controls as you can validate the file as well as the impact.
+You can do this by using the following command:
+<pre>N7K1# <strong>show install all impact kickstart bootflash:n7000-s1-kickstart.5.0.3.bin system bootflash:n7000-s1-dk9.5.0.3.bin
+ </strong>
+ Verifying image bootflash:/n7000-s1-kickstart.5.0.3.bin for boot variable “kickstart”.
+ [####################] 100% — SUCCESS</pre>
+</li>
+</ol>
+<pre>Verifying image bootflash:/n7000-s1-dk9.5.0.3.bin for boot variable “system”.
+ [####################] 100% — SUCCESS
+
+Verifying image type.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “bios” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “system” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “kickstart” version from image bootflash:/n7000-s1-kickstart.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “cmp” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “cmp-bios” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Performing module support checks.
+ [####################] 100% — SUCCESS
+
+Notifying services about system upgrade.
+ [####################] 100% — SUCCESS
+
+Compatibility check is done:
+ Module  bootable          Impact  Install-type  Reason
+ ——  ——–  ————–  ————  ——
+ 2       yes  non-disruptive       rolling
+ 3       yes  non-disruptive       rolling
+ 4       yes  non-disruptive       rolling
+ 5       yes  non-disruptive         reset
+ 6       yes  non-disruptive         reset
+ 7       yes  non-disruptive       rolling
+ 8       yes  non-disruptive       rolling
+ 9       yes  non-disruptive       rolling
+ 10       yes  non-disruptive       rolling
+
+[==== Output Omitted ====]
+ N7K1#
+ Note: The key piece of information here is the Impact column.  As you can see here,
+ this upgrade is non-disruptive (call it minimal) to traffic.  The only two modules
+ that need to be reset are the Supervisors (Mod 5 and 6)
+ 
+ 9.  Once you have validated the images, you can now proceed with the upgrade.  To upgrade the images, use the install command.
+ N7K1<strong>#  install all kickstart bootflash:n7000-s1-kickstart.5.0.3.bin system bootflash:n7000-s1-dk9.5.0.3.bin
+ </strong>
+ Verifying image bootflash:/n7000-s1-kickstart.5.0.3.bin for boot variable “kickstart”.
+ [####################] 100% — SUCCESS
+
+Verifying image bootflash:/n7000-s1-dk9.5.0.3.bin for boot variable “system”.
+ [####################] 100% — SUCCESS
+
+Verifying image type.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “bios” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “system” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “kickstart” version from image bootflash:/n7000-s1-kickstart.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “lc1n7k” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “cmp” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Extracting “cmp-bios” version from image bootflash:/n7000-s1-dk9.5.0.3.bin.
+ [####################] 100% — SUCCESS
+
+Performing module support checks.
+ [####################] 100% — SUCCESS
+
+Notifying services about system upgrade.
+ [####################] 100% — SUCCESS
+
+Compatibility check is done:
+ Module  bootable          Impact  Install-type  Reason
+ ——  ——–  ————–  ————  ——
+ 2       yes  non-disruptive       rolling
+ 3       yes  non-disruptive       rolling
+ 4       yes  non-disruptive       rolling
+ 5       yes  non-disruptive         reset
+ 6       yes  non-disruptive         reset
+ 7       yes  non-disruptive       rolling
+ 8       yes  non-disruptive       rolling
+ 9       yes  non-disruptive       rolling
+ 10       yes  non-disruptive       rolling
+
+Images will be upgraded according to following table:
+ Module       Image                  Running-ersion(pri:alt)           New-Version  Upg-Required
+ [===== Output Omitted ====]
+ 
+ Note: As you can see, it does the impact analysis for you anyways when you do the install.
+ You will now need to confirm if you do want to do the upgrade by entering Y
+ Do you want to continue with the installation (y/n)?  [n] <strong>y</strong></pre>
+Install is in progress, please wait.
+<pre>Performing runtime checks.
+ [####################] 100% — SUCCESS
+
+Syncing image bootflash:/n7000-s1-kickstart.5.0.3.bin to standby.
+ [####################] 100% — SUCCESS
+
+Syncing image bootflash:/n7000-s1-dk9.5.0.3.bin to standby.
+ [####################] 100% — SUCCESS
+
+Setting boot variables.
+ [####################] 100% — SUCCESS
+
+Performing configuration copy.
+ [####################] 100% — SUCCESS
+
+Module 2: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 3: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 4: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 5: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 6: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 7: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 8: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 9: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+
+Module 10: Refreshing compact flash and upgrading bios/loader/bootrom.
+ Warning: please do not remove or power off the module at this time.
+ [####################] 100% — SUCCESS
+ 2010 Aug 10 15:22:34 N7K1 %PLATFORM-2-MOD_REMOVE: Module 6 removed (Serial number JAF14XXXXXX)
+
+2010 Aug 10 15:26:43 N7K1 %CMPPROXY-STANDBY-2-LOG_CMP_UP: Connectivity Management processor(on module 6) is now UP
+
+Module 6: Waiting for module online.
+ — SUCCESS
+
+Notifying services about the switchover.
+ [####################] 100% — SUCCESS
+
+“Switching over onto standby”.
+ 2010 Aug 10 15:33:55 N7K1 %$ VDC-1 %$ %CMPPROXY-STANDBY-2-LOG_CMP_UP: Connectivity Management processor(on module 5) is now UP
+
+Module 2: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 3: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 4: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 7: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 8: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 9: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Module 10: Non-disruptive upgrading.
+ [####################] 100% — SUCCESS
+
+Install has been successful.
+
+User Access Verification
+ N7K1 login:
+ 
+ 10. And just like that, both supervisors have been upgraded and are running the new code:
+ 
+ N7K1# <strong>sh ver</strong>
+ Cisco Nexus Operating System (NX-OS) Software
+ TAC support: http://www.cisco.com/tac
+ Copyright (c) 2002-2010, Cisco Systems, Inc. All rights reserved.
+ The copyrights to certain works contained in this software are
+ owned by other third parties and used and distributed under
+ license. Certain components of this software are licensed under
+ the GNU General Public License (GPL) version 2.0 or the GNU
+ Lesser General Public License (LGPL) Version 2.1. A copy of each
+ such license is available at
+ (SNIP)
+
+Software
+ BIOS:      version 3.22.0
+ loader:    version N/A
+ <strong>kickstart: version 5.0(3)
+ system:    version 5.0(3)</strong>
+ BIOS compile time:       02/20/10
+ kickstart image file is: bootflash:/n7000-s1-kickstart.5.0.3.bin
+ kickstart compile time:  7/12/2010 18:00:00 [07/24/2010 11:47:30]
+ system image file is:    bootflash:/n7000-s1-dk9.5.0.3.bin
+ system compile time:     7/12/2010 18:00:00 [07/24/2010 13:21:35]</pre>
+&nbsp;]]>
+
+########################################################################################################################
+#
+# Technical Tip - STM Loop Detect
+#
+########################################################################################################################
+
+ackground</h2>
+The document outlines on how to troubleshoot &amp; resolve STM Loop Detect messages in Network on Nexus Switches.
+Typical server to switch setup:
+<p id="fbdDrQI"><img class="alignnone size-full wp-image-5553 " src="https://www.almeidas.es/wp-content/uploads/2016/08/img_57a8ebe43fdd0.png" alt="" /></p>
+
+The above setup has Nexus2K switches dual homed to Nexus5K, &amp; server has ports connected to both the Nexus2K switches. The server is configured with NIC teaming with Active/Active mode &amp; the switch interfaces are configured as standalone (Not part of port channel). The STM loop detect message are recorded in the switch logs when same mac address is learned on 2 different  interfaces. The loop detection feature is enabled on the switch by default. The switch sees this as a potential loop and to safeguard, the switch disables dynamic MAC learning for 180 seconds for that Vlan or the entire switch .The behavior of the switch varies based on the NX-OS version installed on the switch.
+Let’s look at the STM messages generated for Nexus fabric extender.
+<pre>FWM-2-STM_LOOP_DETECT: Loops detected in the network for mac 02e0.ed2e.aaaa among ports Eth116/1/28 and Eth116/1/27 vlan 2006 - Disabling dynamic learn notifications for 180 seconds
+FWM-2-STM_LOOP_DETECT: Loops detected in the network for mac 02e0.ed2e.aaaa among ports Eth116/1/27 and Eth116/1/28 vlan 2006 - Disabling dynamic learn notifications for 180 seconds</pre>
+As you can see from the above output the mac address 02e0.ed2e.aaaa is moving between interfaces Eth116/1/27 &amp; Eth116/1/28, &amp; as a preventive measure switch disables dynamic mac address learning for 180 seconds. So during this period no new mac addresses will be added in the mac address table, &amp; will cause connectivity and performance related issues.
+<h2>Symptoms:</h2>
+- The devices/servers connected on the switch will report performance and/or connectivity issues. This is expected due to the fact that switches disable new mac-address learning for 180 seconds.
+<h2>Troubleshooting:</h2>
+- Check the switch logs to see if STM loop detect messages are recorded or not.
+<pre>
+AVLSWHXXX# sh logging | in STM
+FWM-2-STM_LOOP_DETECT: Loops detected in the network for mac 02e0.ed2e.aaaa among ports Eth116/1/28 and Eth116/1/27 vlan 2006 - Disabling dynamic learn notifications for 180 seconds
+FWM-2-STM_LOOP_DETECT: Loops detected in the network for mac 02e0.ed2e.aaaa among ports Eth116/1/27 and Eth116/1/28 vlan 2006 - Disabling dynamic learn notifications for 180 seconds</pre>
+- Check if the number for the mac added/removed is very high. This will indicate that the switch learning and removing too many mac addresses from the table.
+<pre>
+AVLSWHXXX# sh mac address-table notification mac-move
+MAC Move Notify Triggers: 1110070323
+Number of MAC Addresses added: 111896298
+Number of MAC Addresses moved: 0
+Number of MAC Addresses removed: 111896014</pre>
+- While troubleshooting I have not encountered this issue causing high CPU utilization
+on Nexus, but would be worth to check that as well.
+<pre>
+AVLSCHXXX# sh processes cpu | in CPU
+CPU util : 5.5% user, 12.0% kernel, 82.5% idle</pre>
+<h2>
+Solution:</h2>
+- The interfaces on the Nexus 2K should be configured as a port channel. Pls refer to the output given below and you can see that the server interfaces are now part of a port channel.
+<p id="ZoZlIoa"><img class="alignnone size-full wp-image-5554 " src="https://www.almeidas.es/wp-content/uploads/2016/08/img_57a8ee46c5634.png" alt="" /></p>
+
+- The LACP protocol needs to be enabled on the server end as well else the port channel will not come up. After adding the configuration on the switch and the server, the switch will see both the physical interfaces as one Logical interface, &amp; the STM loop detect messages should no more seen in the logs.
+<h3>
+Sample Configuration:</h3>
+<pre>
+AVLSCHXXX#Configure terminal
+AVLSCHXXX(Config)# interface eth116/1/27, eth116/1/28
+AVLSCHXXX(Config-if)#channel-group XX mode active</pre>
+<h3>
+IMPORTANT NOTE:</h3>
+When the port channel configuration is applied on the switch, there will be complete loss of connectivity for the server(s). Pleases make sure that the stakeholder’s (Platform team etc) are fully aware of the impact and a CR or relevant approvals are in place. Please perform due diligence before applying the solution.]]>
+
+########################################################################################################################
+#
+# VCE Exam
+#
+########################################################################################################################
+
+http://www.cybercareercoach.com/avansets-new-pricing-model-may-end-popular-vce-certification-exam-simulator-file-format/
+
+http://gratisexam.com/
+
+http://www.downloadexam.com/
+
+http://www.vcefiles.com/
+
+http://www.getfreedumps.com/
+
+http://examsforall.com/exams/latest/
+
+########################################################################################################################
+#
+# LACP VS STATIC LINK AGGREGATION
+#
+########################################################################################################################
+
+Automatic Failover</strong> – When using static link aggregation, a unidirectional link failure will not be detected by the peer on the other side. The other peer will continue to send packets without noticing. This can go undetected without features such as UDLD which requires a Cisco device on both ends.
+Since LACP sends LACP PDUs the other peer will be informed to disable the corresponding link. LACP will adapt by no longer sending traffic down this dead link. With LACP the error can be detected much sooner &amp; troubleshooting time is reduced. This is a major advantage LACP has over static link aggregation.
+<strong>Mitigates configuration errors</strong> – Configuration errors can go undetected in a static link aggregation whereas with LACP it is easier to troubleshoot any configuration errors.
+<strong>Prevents premature links to be formed</strong> – Links formed using a static link aggregation can be brought up at various times causing traffic to be sent out prematurely. LACP prevents this from happening as it confirms that both peers are ready before traffic is being sent.
+<strong>Hot-Standby Ports</strong> - If you add more than the supported number of ports to an LACP port channel, it has the ability to place these extra ports into a hot-standby mode. If a failure occurs on an active port, the hot-standby port can replace it.
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+########################################################################################################################
+#
+# 
+#
+########################################################################################################################
+
+
